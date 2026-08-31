@@ -63,7 +63,7 @@ python 1-2-build_neural_network_using_numpy.py
 python 1-4-build_neural_network_using_paddle.py
 ```
 
-也可以直接在 Jupyter / AI Studio 中打开 `10663566.ipynb` 分步运行。
+也可以直接在 Jupyter / AI Studio 中打开 `main.ipynb` 分步运行。
 
 ## 参考
 
