@@ -16,13 +16,33 @@
 
 import numpy as np
 import json
-# import matplotlib
-# import matplotlib.pyplot as plt
-# from mpl_toolkits.mplot3d import Axes3D
+from pathlib import Path
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = PROJECT_ROOT / 'generated_figures'
+OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+
+def locate_data_file():
+    candidates = [
+        PROJECT_ROOT / 'work' / 'housing.data',
+        PROJECT_ROOT / 'housing.data',
+        PROJECT_ROOT / 'work' / 'housing.csv',
+        PROJECT_ROOT / 'housing.csv',
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError('Could not find the dataset file in the project root or work folder.')
+
 
 def load_data():
     # 从文件导入数据
-    datafile = './housing.data'
+    datafile = locate_data_file()
     data = np.fromfile(datafile, sep=' ')
 
     # 每条数据包括14项，其中前面13项是影响因素，第14项是相应的房屋价格中位数
@@ -60,6 +80,9 @@ class Network(object):
         #np.random.seed(0)
         self.w = np.random.randn(num_of_weights, 1)
         self.b = 0.
+
+    def predict(self, x):
+        return self.forward(x)
         
     def forward(self, x):
         z = np.dot(x, self.w) + self.b
@@ -108,6 +131,49 @@ class Network(object):
                                  format(epoch_id, iter_id, loss))
         
         return losses
+def save_figure(fig_name, plot_func):
+    plt.figure(figsize=(8, 6))
+    plot_func()
+    plt.tight_layout()
+    save_path = OUTPUT_DIR / fig_name
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    plt.close()
+    print(f'Figure saved: {save_path}')
+    return save_path
+
+
+def plot_loss_curve(losses):
+    x = np.arange(len(losses))
+    y = np.array(losses)
+    plt.plot(x, y, color='royalblue', linewidth=1.8)
+    plt.title('Training Loss Curve')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.grid(alpha=0.3)
+
+
+def plot_prediction_vs_actual(test_data, predictions):
+    true_values = test_data[:, -1]
+    pred_values = predictions.reshape(-1)
+    plt.scatter(true_values, pred_values, alpha=0.7, s=25, color='darkorange')
+    min_val = min(true_values.min(), pred_values.min())
+    max_val = max(true_values.max(), pred_values.max())
+    plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=1)
+    plt.title('Prediction vs Actual')
+    plt.xlabel('Actual House Price')
+    plt.ylabel('Predicted House Price')
+    plt.grid(alpha=0.3)
+
+
+def plot_weight_distribution(net):
+    weights = net.w.reshape(-1)
+    plt.hist(weights, bins=30, color='seagreen', edgecolor='black')
+    plt.title('Weight Distribution')
+    plt.xlabel('Weight value')
+    plt.ylabel('Count')
+    plt.grid(alpha=0.3)
+
+
 def train():
     # 获取数据
     train_data, test_data = load_data()
@@ -117,11 +183,14 @@ def train():
     # 启动训练
     losses = net.train(train_data, num_epochs=50, batch_size=100, eta=0.1)
 
-    # 画出损失函数的变化趋势
-    # plot_x = np.arange(len(losses))
-    # plot_y = np.array(losses)
-    # plt.plot(plot_x, plot_y)
-    # plt.show()
+    predictions = net.predict(test_data[:, :-1])
+
+    save_figure('loss_curve.png', lambda: plot_loss_curve(losses))
+    save_figure('prediction_vs_actual.png', lambda: plot_prediction_vs_actual(test_data, predictions))
+    save_figure('weight_distribution.png', lambda: plot_weight_distribution(net))
+
+    print(f'All plots saved in: {OUTPUT_DIR}')
+
 
 def plot_3D_neural_work_weight():
     # 获取数据
