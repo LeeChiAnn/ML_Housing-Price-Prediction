@@ -20,10 +20,38 @@ import paddle.nn.functional as F
 import numpy as np
 import os
 import random
+from pathlib import Path
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = PROJECT_ROOT / 'generated_figures'
+OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+# 学生可直接修改这些参数
+EPOCH_NUM = 10
+BATCH_SIZE = 10
+LEARNING_RATE = 0.01
+
+
+def locate_data_file():
+    candidates = [
+        PROJECT_ROOT / 'work' / 'housing.data',
+        PROJECT_ROOT / 'housing.data',
+        PROJECT_ROOT / 'work' / 'housing.csv',
+        PROJECT_ROOT / 'housing.csv',
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError('Could not find housing dataset in project root or work folder.')
+
 
 def load_data():
     # 从文件导入数据
-    datafile = './housing.data'
+    datafile = locate_data_file()
     data = np.fromfile(datafile, sep=' ', dtype=np.float32)
 
     # 每条数据包括14项，其中前面13项是影响因素，第14项是相应的房屋价格中位数
@@ -76,6 +104,47 @@ class Regressor(paddle.nn.Layer):
         return x
 
 
+def save_plot(filename, plot_func):
+    plt.figure(figsize=(8, 6))
+    plot_func()
+    plt.tight_layout()
+    save_path = OUTPUT_DIR / filename
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    plt.close()
+    print(f'Figure saved: {save_path}')
+    return save_path
+
+
+def plot_loss_curve(loss_history):
+    plt.plot(range(len(loss_history)), loss_history, color='royalblue', linewidth=2)
+    plt.title('Training Loss Curve')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.grid(alpha=0.3)
+
+
+def plot_prediction_vs_actual(true_values, pred_values):
+    true_values = np.asarray(true_values).reshape(-1)
+    pred_values = np.asarray(pred_values).reshape(-1)
+    plt.scatter(true_values, pred_values, alpha=0.7, s=25, color='darkorange')
+    min_val = min(true_values.min(), pred_values.min())
+    max_val = max(true_values.max(), pred_values.max())
+    plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=1)
+    plt.title('Prediction vs Actual')
+    plt.xlabel('Actual House Price')
+    plt.ylabel('Predicted House Price')
+    plt.grid(alpha=0.3)
+
+
+def plot_weight_distribution(model):
+    weights = model.fc.weight.numpy().reshape(-1)
+    plt.hist(weights, bins=30, color='seagreen', edgecolor='black')
+    plt.title('Weight Distribution')
+    plt.xlabel('Weight value')
+    plt.ylabel('Count')
+    plt.grid(alpha=0.3)
+
+
 def train():
     # 声明定义好的线性回归模型
     model = Regressor()
@@ -84,11 +153,9 @@ def train():
     # 加载数据
     training_data, test_data = load_data()
     # 定义优化算法，使用随机梯度下降SGD
-    # 学习率设置为0.01
-    opt = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
+    opt = paddle.optimizer.SGD(learning_rate=LEARNING_RATE, parameters=model.parameters())
 
-    EPOCH_NUM = 10   # 设置外层循环次数
-    BATCH_SIZE = 10  # 设置batch大小
+    loss_history = []
 
     # 定义外层循环
     for epoch_id in range(EPOCH_NUM):
@@ -110,7 +177,8 @@ def train():
             # 计算损失
             loss = F.square_error_cost(predicts, label=prices)
             avg_loss = paddle.mean(loss)
-            if iter_id%20==0:
+            loss_history.append(float(avg_loss.numpy()))
+            if iter_id % 20 == 0:
                 print("epoch: {}, iter: {}, loss is: {}".format(epoch_id, iter_id, avg_loss.numpy()))
             
             # 反向传播
@@ -121,8 +189,24 @@ def train():
             opt.clear_grad()
 
     # 保存模型参数，文件名为LR_model.pdparams
-    paddle.save(model.state_dict(), 'LR_model.pdparams')
-    print("模型保存成功，模型参数保存在LR_model.pdparams中")
+    save_path = PROJECT_ROOT / 'LR_model.pdparams'
+    paddle.save(model.state_dict(), str(save_path))
+    print(f"模型保存成功，模型参数保存在{save_path}中")
+
+    # 训练完成后自动保存图像
+    save_plot('loss_curve.png', lambda: plot_loss_curve(loss_history))
+
+    # 预测结果可视化
+    predicts = model(paddle.to_tensor(test_data[:, :-1]))
+    predict_values = predicts.numpy() * (max_values[-1] - min_values[-1]) + avg_values[-1]
+    true_values = test_data[:, -1] * (max_values[-1] - min_values[-1]) + avg_values[-1]
+    save_plot('prediction_vs_actual.png', lambda: plot_prediction_vs_actual(true_values, predict_values))
+
+    # 权重分布图
+    save_plot('weight_distribution.png', lambda: plot_weight_distribution(model))
+
+    print(f'All plots saved in: {OUTPUT_DIR}')
+    return model, test_data
 
 
 def load_one_example():
